@@ -1,0 +1,853 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HE Bundle Size Chart Builder</title>
+<style>
+  :root{
+    --purple:#4C408A; --purple-dark:#2d2842; --tan:#e6dbbd; --tan-light:#f3eee2; --line:#ac9f83;
+    --bg:#f6f4ef; --panel:#fff; --ink:#23212b; --muted:#6b6776; --border:#dedad0;
+    --ok:#2f7d4f; --warn:#9a6a00; --err:#a33;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
+  header.app{background:var(--purple-dark);color:#fff;padding:14px 24px;display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+  header.app h1{margin:0;font-size:18px;font-weight:600;letter-spacing:.2px}
+  header.app span{opacity:.7;font-size:13px}
+  main{display:grid;grid-template-columns:minmax(360px,520px) 1fr;gap:20px;padding:20px 24px;align-items:start}
+  @media (max-width:1100px){main{grid-template-columns:1fr}}
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:16px}
+  .panel + .panel{margin-top:16px}
+  h2{font-size:13px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:0 0 12px;display:flex;align-items:center;gap:8px}
+  h2 .step{background:var(--purple);color:#fff;border-radius:50%;width:20px;height:20px;display:inline-grid;place-items:center;font-size:11px;letter-spacing:0}
+  .chart-card{border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:12px;background:#fcfbf8}
+  .chart-card .row{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+  .chart-card input[type=text]{flex:1}
+  input[type=text],select,textarea{font:inherit;border:1px solid var(--border);border-radius:5px;padding:6px 8px;background:#fff;color:var(--ink);width:100%}
+  textarea{font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;resize:vertical}
+  .chart-card textarea{min-height:130px}
+  .parse{font-size:12px;color:var(--muted);margin-top:6px}
+  .parse.ok{color:var(--ok)} .parse.err{color:var(--err)}
+  button{font:inherit;border:1px solid var(--border);background:#fff;color:var(--ink);border-radius:5px;padding:6px 10px;cursor:pointer;white-space:nowrap}
+  button:hover{border-color:var(--purple);color:var(--purple)}
+  button:disabled{opacity:.4;cursor:default;border-color:var(--border);color:var(--ink)}
+  button.primary{background:var(--purple);border-color:var(--purple);color:#fff}
+  button.primary:hover{background:var(--purple-dark);color:#fff}
+  button.icon{padding:4px 8px;color:var(--muted)}
+  .btns{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .opts{display:grid;gap:10px}
+  .opts label.check{display:flex;gap:8px;align-items:center}
+  .opts .field span{display:block;font-size:12px;color:var(--muted);margin-bottom:3px}
+  .status{margin-top:12px;font-size:13px;border-radius:5px;padding:8px 10px;background:var(--tan-light);display:none}
+  .status.show{display:block}
+  .status.warn{background:#fff4d6;color:#6b4a00}
+  .status.err{background:#fde8e8;color:var(--err)}
+  .toolbar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px;border:1px solid var(--border);border-radius:6px;background:#fcfbf8;margin-bottom:10px}
+  .toolbar .sep{width:1px;align-self:stretch;background:var(--border);margin:0 4px}
+  .toolbar .hint{font-size:12px;color:var(--muted);margin-left:auto}
+  .toolbar button{padding:4px 8px;font-size:13px}
+  .seg{display:inline-flex;border:1px solid var(--border);border-radius:5px;overflow:hidden}
+  .seg button{border:0;border-radius:0}
+  .seg button.on{background:var(--purple);color:#fff}
+  .preview-wrap{background:#8a8794;border-radius:6px;padding:20px;overflow:auto;display:flex;justify-content:center}
+  #preview{border:0;background:#fff;border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,.3);width:600px;height:300px;display:block;flex:none}
+  .code-head{display:flex;justify-content:space-between;align-items:center;margin:16px 0 6px;gap:8px;flex-wrap:wrap}
+  .code-head b{font-size:13px}
+  #code{min-height:320px;white-space:pre;overflow:auto}
+  .dirty{font-size:12px;color:var(--warn);display:none}
+  .dirty.show{display:inline}
+  .empty{color:var(--muted);text-align:center;padding:40px 10px}
+  footer{padding:0 24px 24px;color:var(--muted);font-size:12px}
+</style>
+</head>
+<body>
+<header class="app">
+  <h1>Historical Emporium · Bundle Size Chart Builder</h1>
+  <span>Paste the size charts for each piece, combine, tweak, copy into the Shopify metaobject.</span>
+</header>
+
+<main>
+  <section>
+    <div class="panel">
+      <h2><span class="step">1</span> Paste size charts</h2>
+      <div id="charts"></div>
+      <div class="btns">
+        <button id="addChart">+ Add another chart</button>
+        <button id="loadExample">Load example</button>
+        <button id="clearAll" class="icon">Clear all</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2><span class="step">2</span> Combine</h2>
+      <div class="opts">
+        <label class="field"><span>Layout</span>
+          <select id="optMode">
+            <option value="auto">Auto (merge by size when sizes line up, otherwise stack)</option>
+            <option value="merge">Merge by size — one table, columns side by side</option>
+            <option value="stack">Stack — one table, one section per piece</option>
+            <option value="separate">Separate tables — one after another</option>
+          </select>
+        </label>
+        <label class="check"><input type="checkbox" id="optLabels" checked> Label each piece (e.g. “Jacket”, “Trousers”)</label>
+        <label class="check"><input type="checkbox" id="optDedupe" checked> Remove duplicate note rows</label>
+        <label class="check"><input type="checkbox" id="optGuides" checked> Include sizing guides (duplicates removed)</label>
+        <label class="field"><span>HTML comment at top (optional)</span>
+          <input type="text" id="optComment" placeholder="auto: bundle – piece + piece">
+        </label>
+      </div>
+      <div class="btns" style="margin-top:12px">
+        <button class="primary" id="generate">Generate combined chart</button>
+        <span class="dirty" id="dirtyNote">You have manual edits — regenerating will replace them.</span>
+      </div>
+      <div class="status" id="status"></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2><span class="step">3</span> Edit &amp; copy</h2>
+    <div class="toolbar" id="toolbar">
+      <div class="seg" id="device">
+        <button data-dev="desktop" class="on">Desktop</button>
+        <button data-dev="mobile">Mobile</button>
+      </div>
+      <span class="sep"></span>
+      <button data-op="rowUp" title="Move row up">Row ↑</button>
+      <button data-op="rowDown" title="Move row down">Row ↓</button>
+      <button data-op="rowAdd" title="Insert blank row below">+ Row</button>
+      <button data-op="rowDup" title="Duplicate row">Duplicate</button>
+      <button data-op="rowDel" title="Delete row">Delete row</button>
+      <span class="sep"></span>
+      <button data-op="colAdd" title="Insert column to the right">+ Col</button>
+      <button data-op="colDel" title="Delete column">Delete col</button>
+      <span class="sep"></span>
+      <select id="rowStyle" title="Row style" style="width:auto;padding:4px 6px">
+        <option value="">Row style…</option>
+        <option value="normal">Normal row</option>
+        <option value="header">Header (dark tan)</option>
+        <option value="geosubheading">Subheading (light tan)</option>
+      </select>
+      <button data-op="addNote" title="Add a full-width note row at the bottom of the table">+ Note</button>
+      <span class="hint" id="selHint">Click any cell to edit text or select its row.</span>
+    </div>
+
+    <div class="preview-wrap" id="previewWrap">
+      <iframe id="preview" title="Size chart preview"></iframe>
+    </div>
+
+    <div class="code-head">
+      <b>HTML for Shopify</b>
+      <div class="btns">
+        <button id="format">Tidy HTML</button>
+        <button id="download">Download .html</button>
+        <button class="primary" id="copy">Copy HTML</button>
+      </div>
+    </div>
+    <textarea id="code" spellcheck="false" placeholder="The combined chart HTML appears here. Edits here update the preview, and edits in the preview update this."></textarea>
+  </section>
+</main>
+<footer>Preview styling replicates the live site’s sizecharts.css and size-guide modal. Everything runs in your browser; drafts are kept in this browser only.</footer>
+
+<script>
+(() => {
+'use strict';
+const $ = s => document.querySelector(s);
+const LS_KEY = 'he-bundle-size-charts-v1';
+
+/* ------------------------------------------------------------------ *
+ * Site CSS replica (from historicalemporium.com sizecharts.css,
+ * bootstrap-backup.css and product.css size-chart modal rules).
+ * Media queries are swapped for body.desktop / body.mobile so the
+ * preview can emulate either viewport inside a narrow iframe.
+ * ------------------------------------------------------------------ */
+const SITE_CSS = `
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:#fff}
+body{font:14px/1.4 "Helvetica Neue",Helvetica,Arial,sans-serif;color:#333}
+.size-chart-header{display:flex;justify-content:space-between;align-items:center;padding:20px 24px;border-bottom:1px solid #e5e5e5;background:#f8f8f8}
+.size-chart-title{margin:0;font-size:20px;font-weight:600;color:#333}
+.size-chart-x{color:#666;font-size:18px}
+.size-chart-body *{margin:0;padding:0}
+.size-chart-body{padding:24px}
+body.mobile .size-chart-header{padding:16px 20px}
+body.mobile .size-chart-body{padding:20px}
+table{border-collapse:collapse;border-spacing:0;background-color:transparent}
+td,th{padding:0}
+.standardtable{color:#000;border:1px solid #ac9f83;font-family:Verdana,Arial,Helvetica,Geneva,Swiss,SunSans-Regular;vertical-align:middle;text-align:center;background-color:#fff;padding:0;font-size:10pt;margin-right:10px}
+body.desktop .standardtable{width:100%}
+.standardtable .header{color:#000;background-color:#e6dbbd;font-weight:700;text-align:center;vertical-align:middle;font-size:11pt;line-height:11pt;display:table-row}
+.standardtable .geosubheading{background-color:#f3eee2;font-weight:700;font-size:10pt;line-height:10pt}
+.standardtable tr td{vertical-align:middle;text-align:center;border:1px solid #ac9f83;line-height:15pt}
+.visible-xs{display:none!important}
+body.mobile .visible-xs{display:block!important}
+body.mobile .hidden-xs{display:none!important}
+.size-chart-body .collapse{display:block!important;max-height:0!important;overflow:hidden!important;opacity:0!important;padding-top:0!important;margin-top:0!important;text-align:center!important;transition:max-height .6s ease-in-out,opacity .6s ease-in-out,padding-top .6s ease-in-out,margin-top .6s ease-in-out!important}
+.size-chart-body .collapse.active{max-height:2000px!important;opacity:1!important;padding-top:15px!important;margin-top:10px!important}
+.size-chart-body .collapse img{max-width:100%;height:auto;display:block;margin-bottom:15px}
+.size-chart-body .bigcartbutton{display:inline-flex;align-items:center;justify-content:center;padding:12px 25px;background-color:#4C408A;color:#fff;border:2px solid #4C408A;border-radius:4px;font-size:14px;font-weight:600;text-decoration:none;text-transform:uppercase;letter-spacing:.5px;margin:15px auto 0;cursor:pointer}
+/* editor aids (never exported) */
+.standardtable[contenteditable]{outline:none}
+.standardtable td:empty{height:1.7em}
+tr[data-hesel]>td{background-image:linear-gradient(rgba(76,64,138,.08),rgba(76,64,138,.08))}
+td[data-hecell]{outline:2px solid #4C408A;outline-offset:-2px}
+`;
+
+/* ----------------------------- state ------------------------------ */
+let charts = [];           // [{label, src}]
+let dirty = false;         // manual edits since last generate
+let selCell = null;
+let fdoc = null, root = null;
+let device = 'desktop';
+
+const EXAMPLE = [
+{label:'Vest', src:`<!-- mens_sizing_31 Shrine vests -->
+<table class="standardtable">
+  <tr class="header">
+    <td colspan="2"> Sizing Chart</td>
+  </tr>
+  <tr class="geosubheading">
+    <td colspan="2">
+      This vest runs small, so please look closely at the sizing chart before ordering.</td>
+  </tr>
+  <tr class="geosubheading">
+    <td>Size</td>
+    <td>Chest/Torso<br>(up to)</td>
+  </tr>
+  <tr><td>S</td><td>36"</td></tr>
+  <tr><td>M</td><td>39"</td></tr>
+  <tr><td>L</td><td>42"</td></tr>
+  <tr><td>XL</td><td>45"</td></tr>
+  <tr><td>2X</td><td>48"</td></tr>
+  <tr>
+    <td colspan="2"><div align="left">Back length ~ 22".</div></td>
+  </tr>
+  <tr>
+    <td colspan="2"><div align="left">Not all sizes are available in all vests. Please see drop-down list for available sizes in this style.</div></td>
+  </tr>
+</table>
+
+<!-- mens_sizing_guide.html -->
+<div class="hidden-phone hidden-xs"><p><strong>Unsure how to measure?</strong> <a href="#mens_guide" data-toggle="collapse">Click here for the mens sizing guide.</a></p>
+<div id="mens_guide" class="collapse">
+<img alt="Mens Sizing Guide" src="https://cdn.shopify.com/s/files/1/0980/0974/3654/files/mens_sizing_guide.gif?v=1768427005">
+	<a href="#mens_guide" class="bigcartbutton" data-toggle="collapse">Hide Guide</a>
+</div>
+</div>
+<div class="visible-xs">
+<br>
+<img alt="Mens Sizing Guide" class="sizing_guide" src="https://cdn.shopify.com/s/files/1/0980/0974/3654/files/mens_sizing_guide.gif?v=1768427005" width="100%">
+</div>
+<!-- end mens_sizing_guide.html -->`},
+{label:'Trousers', src:`<!-- EXAMPLE ONLY: made-up trouser chart -->
+<table class="standardtable">
+  <tr class="header">
+    <td colspan="3"> Sizing Chart</td>
+  </tr>
+  <tr class="geosubheading">
+    <td>Size</td>
+    <td>Waist<br>(up to)</td>
+    <td>Inseam</td>
+  </tr>
+  <tr><td>S</td><td>32"</td><td>32"</td></tr>
+  <tr><td>M</td><td>35"</td><td>32"</td></tr>
+  <tr><td>L</td><td>38"</td><td>33"</td></tr>
+  <tr><td>XL</td><td>41"</td><td>33"</td></tr>
+  <tr><td>XXL</td><td>44"</td><td>34"</td></tr>
+  <tr>
+    <td colspan="3"><div align="left">Not all sizes are available in all vests. Please see drop-down list for available sizes in this style.</div></td>
+  </tr>
+</table>
+
+<!-- mens_sizing_guide.html -->
+<div class="hidden-phone hidden-xs"><p><strong>Unsure how to measure?</strong> <a href="#mens_guide" data-toggle="collapse">Click here for the mens sizing guide.</a></p>
+<div id="mens_guide" class="collapse">
+<img alt="Mens Sizing Guide" src="https://cdn.shopify.com/s/files/1/0980/0974/3654/files/mens_sizing_guide.gif?v=1768427005">
+	<a href="#mens_guide" class="bigcartbutton" data-toggle="collapse">Hide Guide</a>
+</div>
+</div>
+<div class="visible-xs">
+<br>
+<img alt="Mens Sizing Guide" class="sizing_guide" src="https://cdn.shopify.com/s/files/1/0980/0974/3654/files/mens_sizing_guide.gif?v=1768427005" width="100%">
+</div>
+<!-- end mens_sizing_guide.html -->`}
+];
+
+/* ---------------------------- helpers ----------------------------- */
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const txt = el => (el.textContent || '').replace(/\s+/g, ' ').trim();
+function el(tag, attrs = {}, html) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === 'colspan') { if (v > 1) e.setAttribute('colspan', v); }
+    else e.setAttribute(k, v);
+  }
+  if (html != null) e.innerHTML = html;
+  return e;
+}
+function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
+
+/** Occupancy grid of a table (handles colspan + rowspan). */
+function grid(table) {
+  const g = [];
+  [...table.rows].forEach((tr, r) => {
+    g[r] = g[r] || [];
+    let c = 0;
+    for (const td of tr.cells) {
+      while (g[r][c]) c++;
+      for (let i = 0; i < td.rowSpan; i++)
+        for (let j = 0; j < td.colSpan; j++) (g[r + i] = g[r + i] || [])[c + j] = td;
+      c += td.colSpan;
+    }
+  });
+  return g;
+}
+const width = t => grid(t).reduce((m, row) => Math.max(m, row ? row.length : 0), 0);
+
+/* ----------------------------- parsing ---------------------------- */
+function parseChart(src) {
+  const tpl = document.createElement('template');
+  tpl.innerHTML = src || '';
+  let tables = [...tpl.content.querySelectorAll('table.standardtable')];
+  if (!tables.length) tables = [...tpl.content.querySelectorAll('table')];
+  tables = tables.filter(t => !t.parentElement || !t.parentElement.closest('table')); // top-level only
+  let comment = '';
+  if (tables.length) {
+    const w = document.createTreeWalker(tpl.content, NodeFilter.SHOW_COMMENT);
+    let n;
+    while ((n = w.nextNode())) {
+      if (!(n.compareDocumentPosition(tables[0]) & Node.DOCUMENT_POSITION_FOLLOWING)) break;
+      const t = n.data.trim();
+      if (t && !/INLINED FROM|\.html|^end\b|example only/i.test(t)) { comment = t; break; }
+    }
+  }
+  const suggested = comment.replace(/^[\w-]*_[\w-]*\s*/, '').trim();
+  const i = (src || '').toLowerCase().lastIndexOf('</table>');
+  const extras = i >= 0 ? src.slice(i + 8).trim() : '';
+  return { tables, comment, suggested, extras };
+}
+
+/** Understand a table well enough to merge it by size. */
+function structure(t) {
+  const rows = [...t.rows];
+  const fail = reason => ({ ok: false, reason });
+  if (rows.some(r => [...r.cells].some(c => c.rowSpan > 1))) return fail('one chart has a merged (rowspan) cell, like a side image');
+  const W = width(t);
+  if (W < 2) return fail('one chart has fewer than two columns');
+  const isFull = r => r.cells.length === 1;
+  const isPlain = r => r.cells.length === W && [...r.cells].every(c => c.colSpan === 1);
+  const isHead = r => r.classList.contains('header') || r.classList.contains('geosubheading') || /^size\b/i.test(txt(r.cells[0] || {}));
+  let first = -1, last = -1;
+  rows.forEach((r, i) => { if (isPlain(r) && !isHead(r)) { if (first < 0) first = i; last = i; } });
+  if (first < 0) return fail('no size rows were found in one chart');
+  let colHead = -1;
+  for (let i = first - 1; i >= 0; i--) if (isPlain(rows[i])) { colHead = i; break; }
+  if (colHead < 0) return fail('one chart has no column-heading row');
+  for (let i = first; i <= last; i++) if (!(isPlain(rows[i]) && !isHead(rows[i]))) return fail('one chart has extra rows mixed in with its sizes');
+  const title = rows[0] && isFull(rows[0]) && rows[0].classList.contains('header') ? rows[0] : null;
+  const pre = rows.slice(title ? 1 : 0, colHead);
+  if (pre.some(r => !isFull(r))) return fail('one chart has an unusual heading layout');
+  const notes = rows.slice(last + 1);
+  if (notes.some(r => !isFull(r))) return fail('one chart has an unusual layout below its sizes');
+  const data = rows.slice(first, last + 1).map(r => ({ key: normSize(txt(r.cells[0])), tr: r }));
+  return { ok: true, W, title, pre, colHead: rows[colHead], data, notes };
+}
+
+const SIZE_ALIASES = { XXS:'2XS', XXSMALL:'2XS', XSMALL:'XS', 'X-SMALL':'XS', EXTRASMALL:'XS', SMALL:'S', SM:'S', MEDIUM:'M', MED:'M', LARGE:'L', LG:'L',
+  XLARGE:'XL', 'X-LARGE':'XL', EXTRALARGE:'XL', XXL:'2X', '2XL':'2X', XXLARGE:'2X', XXXL:'3X', '3XL':'3X', XXXXL:'4X', '4XL':'4X', '5XL':'5X', '6XL':'6X' };
+const SIZE_RANK = { '2XS':0, XS:1, S:2, M:3, L:4, XL:5, '2X':6, '3X':7, '4X':8, '5X':9, '6X':10 };
+function normSize(s) {
+  let k = s.toUpperCase().replace(/\s+/g, '').replace(/[.]$/, '');
+  return SIZE_ALIASES[k] || k;
+}
+function rank(k) {
+  if (k in SIZE_RANK) return SIZE_RANK[k];
+  const m = k.match(/^(\d+(?:\.\d+)?)(?:"|IN)?$/);
+  return m ? 100 + parseFloat(m[1]) : null;
+}
+
+/* --------------------------- generation --------------------------- */
+function getOpts() {
+  return { mode: $('#optMode').value, labels: $('#optLabels').checked, dedupe: $('#optDedupe').checked,
+           guides: $('#optGuides').checked, comment: $('#optComment').value.trim() };
+}
+
+function generate() {
+  const opts = getOpts();
+  const pieces = [], extras = [], problems = [];
+  charts.forEach((c, ci) => {
+    if (!c.src.trim()) return;
+    const p = parseChart(c.src);
+    if (!p.tables.length) { problems.push(`Chart ${ci + 1} has no &lt;table&gt; in it.`); return; }
+    const base = c.label.trim() || p.suggested || `Chart ${ci + 1}`;
+    p.tables.forEach((t, ti) => pieces.push({ label: base + (p.tables.length > 1 ? ` (${ti + 1})` : ''), table: t.cloneNode(true) }));
+    if (p.extras) extras.push(p.extras);
+  });
+  if (!pieces.length) { setStatus(problems.join(' ') || 'Paste at least one size chart to get started.', problems.length ? 'err' : ''); return; }
+
+  let mode = opts.mode, msg = [], level = '';
+  let tables;
+  if (mode === 'auto' || mode === 'merge') {
+    const structs = pieces.map(p => structure(p.table));
+    const bad = structs.find(s => !s.ok);
+    let overlapOk = !bad, unmatched = [];
+    if (!bad) {
+      const baseKeys = new Set(structs[0].data.map(d => d.key));
+      structs.slice(1).forEach((s, i) => {
+        const hits = s.data.filter(d => baseKeys.has(d.key)).length;
+        if (hits / Math.max(1, s.data.length) < 0.5) overlapOk = false;
+      });
+      const allKeys = structs.map(s => new Set(s.data.map(d => d.key)));
+      const union = new Set(structs.flatMap(s => s.data.map(d => d.key)));
+      union.forEach(k => { const missing = pieces.filter((p, i) => !allKeys[i].has(k)).map(p => p.label); if (missing.length) unmatched.push(`${k} (no ${missing.join(', ')})`); });
+    }
+    if (!bad && (mode === 'merge' || overlapOk)) {
+      tables = [buildMerge(structs, pieces, opts)];
+      mode = 'merge';
+      msg.push(`Merged ${pieces.length} chart${pieces.length > 1 ? 's' : ''} side by side by size.`);
+      if (unmatched.length) { msg.push(`Sizes not in every chart were filled with “—”: ${unmatched.join('; ')}.`); level = 'warn'; }
+    } else {
+      if (mode === 'merge') { msg.push(`Couldn’t merge by size: ${bad ? bad.reason : 'the sizes don’t match'}. Used the stacked layout instead.`); level = 'warn'; }
+      else msg.push(bad ? `Stacked the charts (${bad.reason}, so a side-by-side merge wasn’t possible).` : 'Stacked the charts because their sizes don’t line up.');
+      mode = 'stack';
+    }
+  }
+  if (mode === 'stack' || mode === 'separate') {
+    tables = buildStack(pieces, opts, mode === 'separate');
+    if (!msg.length) msg.push(mode === 'separate' ? 'Built separate tables.' : 'Stacked the charts into one table.');
+  }
+  if (problems.length) { msg.push(...problems); level = 'warn'; }
+
+  const comment = (opts.comment || `bundle – ${pieces.map(p => p.label).join(' + ')}`).replace(/--+/g, '–');
+  let html = `<!-- ${comment} -->\n` + tables.map(serTable).join('\n<br>\n');
+  if (opts.guides && extras.length) {
+    const seen = new Set(); let dropped = 0;
+    extras.forEach(x => {
+      const k = x.replace(/<!--[\s\S]*?-->/g, '').replace(/\s+/g, '');
+      if (!k) return;
+      if (seen.has(k)) { dropped++; return; }
+      seen.add(k); html += '\n\n' + x;
+    });
+    if (dropped) msg.push(`Removed ${dropped} duplicate sizing guide${dropped > 1 ? 's' : ''}.`);
+  }
+  html += '\n';
+  dirty = false; updateDirty();
+  setOutput(html);
+  setStatus(msg.join(' '), level);
+}
+
+function fullRow(cls, html, W) {
+  const tr = el('tr', cls ? { class: cls } : {});
+  tr.appendChild(el('td', { colspan: W }, html));
+  return tr;
+}
+
+function buildMerge(structs, pieces, opts) {
+  const W = 1 + structs.reduce((a, s) => a + s.W - 1, 0);
+  const T = el('table', { class: 'standardtable' });
+  const seen = new Set();
+  const addFull = tr => {
+    const key = txt(tr).toLowerCase();
+    if (opts.dedupe && seen.has(key)) return;
+    seen.add(key);
+    const c = tr.cloneNode(true); c.cells[0].colSpan = W; T.appendChild(c);
+  };
+  const t0 = structs[0].title;
+  T.appendChild(fullRow('header', t0 ? t0.cells[0].innerHTML.trim() : 'Sizing Chart', W));
+  structs.forEach(s => s.pre.forEach(addFull));
+  if (opts.labels && structs.length > 1) {
+    const tr = el('tr', { class: 'geosubheading' });
+    tr.appendChild(el('td', {}, ''));
+    structs.forEach((s, i) => tr.appendChild(el('td', { colspan: s.W - 1 }, esc(pieces[i].label))));
+    T.appendChild(tr);
+  }
+  const ch = structs[0].colHead.cloneNode(false);
+  ch.appendChild(structs[0].colHead.cells[0].cloneNode(true));
+  structs.forEach(s => [...s.colHead.cells].slice(1).forEach(c => ch.appendChild(c.cloneNode(true))));
+  T.appendChild(ch);
+
+  const order = [], firstCell = new Map();
+  structs.forEach(s => s.data.forEach(d => { if (!firstCell.has(d.key)) { order.push(d.key); firstCell.set(d.key, d.tr.cells[0]); } }));
+  if (order.every(k => rank(k) !== null)) order.sort((a, b) => rank(a) - rank(b));
+  const maps = structs.map(s => new Map(s.data.map(d => [d.key, d.tr])));
+  order.forEach(k => {
+    const tr = el('tr');
+    tr.appendChild(firstCell.get(k).cloneNode(true));
+    structs.forEach((s, i) => {
+      const src = maps[i].get(k);
+      if (src) [...src.cells].slice(1).forEach(c => tr.appendChild(c.cloneNode(true)));
+      else for (let j = 1; j < s.W; j++) tr.appendChild(el('td', {}, '—'));
+    });
+    T.appendChild(tr);
+  });
+  structs.forEach(s => s.notes.forEach(addFull));
+  return T;
+}
+
+function buildStack(pieces, opts, separate) {
+  const widths = pieces.map(p => width(p.table));
+  const W = Math.max(...widths);
+  const seen = new Set(), out = [];
+  let T = null;
+  pieces.forEach((p, i) => {
+    const t = p.table, w = widths[i];
+    const r0 = t.rows[0];
+    const hasTitle = r0 && r0.classList.contains('header') && r0.cells.length <= 2 && /chart|siz/i.test(txt(r0.cells[0]));
+    if (opts.labels && pieces.length > 1) {
+      const label = `${esc(p.label)} Sizing Chart`;
+      if (hasTitle) r0.cells[0].innerHTML = label;
+      else {
+        const tr = fullRow('header', label, w);
+        const first = t.rows[0];
+        first ? first.parentNode.insertBefore(tr, first) : t.appendChild(tr);
+      }
+    }
+    // pad narrower tables so every row spans the full width
+    const diff = separate ? 0 : W - w;
+    if (diff > 0) {
+      const covered = new Set();
+      [...t.rows].forEach((tr, r) => {
+        if (covered.has(r) || !tr.cells.length) return;
+        const last = tr.cells[tr.cells.length - 1];
+        last.colSpan += diff;
+        for (let k = 0; k < last.rowSpan; k++) covered.add(r + k);
+      });
+    }
+    if (separate || !T) { T = el('table', { class: 'standardtable' }); out.push(T); }
+    [...t.rows].forEach(tr => {
+      const isNote = tr.cells.length === 1 && !tr.classList.contains('header');
+      if (isNote && opts.dedupe) {
+        const key = txt(tr).toLowerCase();
+        if (seen.has(key)) return;
+        seen.add(key);
+      }
+      T.appendChild(tr);
+    });
+  });
+  return out;
+}
+
+/* -------------------------- serialization ------------------------- */
+const SKIP_ATTR = new Set(['contenteditable', 'data-hesel', 'data-hecell', 'spellcheck']);
+function attrs(e) {
+  return [...e.attributes].filter(a => !SKIP_ATTR.has(a.name)
+      && !(a.name === 'class' && !a.value.trim())
+      && !((a.name === 'colspan' || a.name === 'rowspan') && a.value === '1'))
+    .map(a => ` ${a.name}="${a.value.replace(/"/g, '&quot;')}"`).join('');
+}
+function clean(node) {
+  if (node.nodeType !== 1) return node;
+  [node, ...node.querySelectorAll('*')].forEach(n => {
+    SKIP_ATTR.forEach(a => n.removeAttribute(a));
+    if (n.classList.contains('collapse')) n.classList.remove('active');
+  });
+  return node;
+}
+function serTable(t) {
+  let s = `<table${attrs(t)}>\n`;
+  for (const tr of t.rows) {
+    s += `  <tr${attrs(tr)}>\n`;
+    for (const td of tr.cells) {
+      const tag = td.tagName.toLowerCase();
+      const inner = clean(td.cloneNode(true)).innerHTML.replace(/\s+/g, ' ').trim();
+      s += `    <${tag}${attrs(td)}>${inner}</${tag}>\n`;
+    }
+    s += '  </tr>\n';
+  }
+  return s + '</table>';
+}
+function serRoot() {
+  let s = '';
+  root.childNodes.forEach(n => {
+    if (n.nodeType === 8) s += `<!--${n.data}-->`;
+    else if (n.nodeType === 3) {
+      if (/\S/.test(n.data)) s += n.data;
+      else { const nl = (n.data.match(/\n/g) || []).length; s += nl ? '\n'.repeat(Math.min(2, nl)) : n.data; }
+    } else if (n.tagName === 'TABLE') s += serTable(n);
+    else s += clean(n.cloneNode(true)).outerHTML;
+  });
+  return s.trim() + '\n';
+}
+
+/* ----------------------------- preview ---------------------------- */
+const frame = $('#preview');
+function initFrame() {
+  return new Promise(res => {
+    frame.addEventListener('load', () => {
+      fdoc = frame.contentDocument;
+      root = fdoc.getElementById('root');
+      bindFrame();
+      res();
+    }, { once: true });
+    frame.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><style>${SITE_CSS}</style></head>
+<body class="desktop"><div class="size-chart-header"><h3 class="size-chart-title">Size Guide</h3><span class="size-chart-x">✕</span></div>
+<div class="size-chart-body" id="root"></div></body></html>`;
+  });
+}
+function renderPreview(html) {
+  if (!root) return;
+  selCell = null; updateToolbar();
+  root.innerHTML = html || '<p style="color:#999;text-align:center;padding:40px 0">Your combined chart will appear here.</p>';
+  root.querySelectorAll('table').forEach(t => { t.setAttribute('contenteditable', 'true'); t.setAttribute('spellcheck', 'false'); });
+  resize();
+}
+function resize() {
+  if (!fdoc) return;
+  frame.style.height = '10px';
+  frame.style.height = fdoc.documentElement.scrollHeight + 'px';
+}
+function bindFrame() {
+  fdoc.addEventListener('click', e => {
+    const a = e.target.closest('a');
+    if (a) {
+      e.preventDefault();
+      if (a.getAttribute('data-toggle') === 'collapse') {
+        const id = (a.getAttribute('href') || '').replace(/^#/, '');
+        const target = id && fdoc.getElementById(id);
+        if (target) { target.classList.toggle('active'); setTimeout(resize, 650); setTimeout(resize, 50); }
+      }
+      return;
+    }
+    const td = e.target.closest('td,th');
+    if (td && td.closest('table[contenteditable]')) select(td);
+  });
+  const fromSelection = () => {
+    const sel = fdoc.getSelection();
+    const n = sel && sel.anchorNode;
+    const td = n && (n.nodeType === 1 ? n : n.parentElement)?.closest('td,th');
+    if (td && td !== selCell && td.closest('table[contenteditable]')) select(td);
+  };
+  fdoc.addEventListener('keyup', fromSelection);
+  fdoc.addEventListener('input', () => { resize(); syncFromPreview(); });
+  fdoc.addEventListener('load', () => resize(), true);
+}
+function select(td) {
+  root.querySelectorAll('[data-hesel],[data-hecell]').forEach(n => { n.removeAttribute('data-hesel'); n.removeAttribute('data-hecell'); });
+  selCell = td;
+  if (td) { td.setAttribute('data-hecell', ''); td.parentElement.setAttribute('data-hesel', ''); }
+  updateToolbar();
+}
+function placeCaret(td) {
+  if (!td) return;
+  const r = fdoc.createRange();
+  r.selectNodeContents(td.querySelector('div') || td); // selected, so typing replaces placeholder text
+  const s = fdoc.getSelection(); s.removeAllRanges(); s.addRange(r);
+  td.closest('table').focus();
+}
+function updateToolbar() {
+  const on = !!(selCell && selCell.isConnected);
+  document.querySelectorAll('#toolbar [data-op]').forEach(b => b.disabled = !on && b.dataset.op !== 'addNote');
+  $('#rowStyle').disabled = !on;
+  $('#selHint').textContent = on ? 'Row selected — type in the cell to edit its text.' : 'Click any cell to edit text or select its row.';
+}
+
+const syncFromPreview = debounce(() => {
+  $('#code').value = serRoot();
+  markEdited();
+}, 250);
+
+function setOutput(html) {
+  $('#code').value = html;
+  renderPreview(html);
+  persist();
+}
+function markEdited() {
+  if ($('#code').value.trim()) { dirty = true; updateDirty(); }
+  persist();
+}
+function updateDirty() { $('#dirtyNote').classList.toggle('show', dirty); }
+
+/* --------------------------- table edits -------------------------- */
+function op(name) {
+  if (!root) return;
+  const tr = selCell && selCell.isConnected ? selCell.parentElement : null;
+  if (!tr && name !== 'addNote') return;
+  const table = tr ? tr.closest('table') : [...root.querySelectorAll('table')].pop();
+  if (!table) return;
+  switch (name) {
+    case 'rowUp': { const p = tr.previousElementSibling; if (p) p.before(tr); break; }
+    case 'rowDown': { const n = tr.nextElementSibling; if (n) n.after(tr); break; }
+    case 'rowAdd':
+    case 'rowDup': {
+      const n = tr.cloneNode(true);
+      n.removeAttribute('data-hesel');
+      [...n.cells].forEach(c => { c.removeAttribute('data-hecell'); c.removeAttribute('rowspan'); if (name === 'rowAdd') c.innerHTML = ''; });
+      tr.after(n); select(n.cells[0]); placeCaret(n.cells[0]); break;
+    }
+    case 'rowDel': {
+      const next = tr.nextElementSibling || tr.previousElementSibling;
+      tr.remove();
+      select(next && next.cells[0] ? next.cells[0] : null);
+      if (!table.rows.length) table.remove();
+      break;
+    }
+    case 'colAdd':
+    case 'colDel': {
+      const g = grid(table);
+      const r = tr.rowIndex;
+      const start = g[r].indexOf(selCell);
+      const col = name === 'colAdd' ? start + selCell.colSpan - 1 : start;
+      const done = new Set();
+      g.forEach(row => {
+        const td = row && row[col];
+        if (!td || done.has(td)) return;
+        done.add(td);
+        if (name === 'colAdd') {
+          if (td.colSpan > 1) td.colSpan += 1;
+          else { const n = fdoc.createElement('td'); if (td.rowSpan > 1) n.rowSpan = td.rowSpan; td.after(n); }
+        } else {
+          if (td.colSpan > 1) td.colSpan -= 1;
+          else { const p = td.parentElement; td.remove(); if (!p.cells.length) p.remove(); }
+        }
+      });
+      if (name === 'colDel') select(null);
+      break;
+    }
+    case 'addNote': {
+      const W = width(table);
+      const n = fdoc.createElement('tr');
+      n.innerHTML = `<td${W > 1 ? ` colspan="${W}"` : ''}><div align="left">New note</div></td>`;
+      (table.tBodies[table.tBodies.length - 1] || table).appendChild(n);
+      select(n.cells[0]); placeCaret(n.cells[0]);
+      break;
+    }
+  }
+  resize();
+  syncFromPreview();
+}
+
+/* ---------------------------- charts UI --------------------------- */
+function renderCharts() {
+  const box = $('#charts');
+  box.innerHTML = '';
+  charts.forEach((c, i) => {
+    const card = el('div', { class: 'chart-card' });
+    card.innerHTML = `
+      <div class="row">
+        <input type="text" placeholder="Piece name (e.g. Jacket)" value="${esc(c.label)}">
+        <button class="icon" title="Move up" ${i === 0 ? 'disabled' : ''}>↑</button>
+        <button class="icon" title="Remove this chart" ${charts.length <= 1 ? 'disabled' : ''}>✕</button>
+      </div>
+      <textarea spellcheck="false" placeholder="Paste size chart ${i + 1} HTML here (table + sizing guide)"></textarea>
+      <div class="parse"></div>`;
+    const [label, up, del] = card.querySelectorAll('input,button');
+    const ta = card.querySelector('textarea');
+    const info = card.querySelector('.parse');
+    ta.value = c.src;
+    const describe = () => {
+      if (!c.src.trim()) { info.className = 'parse'; info.textContent = ''; label.placeholder = 'Piece name (e.g. Jacket)'; return; }
+      const p = parseChart(c.src);
+      if (!p.tables.length) { info.className = 'parse err'; info.textContent = 'No <table> found in this paste.'; return; }
+      const s = structure(p.tables[0]);
+      const bits = [`${p.tables.length} table${p.tables.length > 1 ? 's' : ''}`, `${width(p.tables[0])} columns`];
+      if (s.ok) bits.push(`sizes ${s.data.map(d => txt(d.tr.cells[0])).join(', ')}`);
+      if (p.extras) bits.push('+ guide/extra HTML');
+      info.className = 'parse ok';
+      info.textContent = '✓ ' + bits.join(' · ');
+      label.placeholder = p.suggested ? `Piece name (detected: ${p.suggested})` : 'Piece name (e.g. Jacket)';
+    };
+    describe();
+    label.addEventListener('input', () => { c.label = label.value; inputsChanged(); });
+    ta.addEventListener('input', () => { c.src = ta.value; describe(); inputsChanged(); });
+    up.addEventListener('click', () => { [charts[i - 1], charts[i]] = [charts[i], charts[i - 1]]; renderCharts(); inputsChanged(); });
+    del.addEventListener('click', () => { charts.splice(i, 1); renderCharts(); inputsChanged(); });
+    box.appendChild(card);
+  });
+}
+const inputsChanged = debounce(() => {
+  persist();
+  if (!dirty) generate();
+}, 350);
+
+function setStatus(msg, level) {
+  const s = $('#status');
+  s.className = 'status' + (msg ? ' show' : '') + (level ? ' ' + level : '');
+  s.innerHTML = msg || '';
+}
+
+/* ---------------------------- persistence ------------------------- */
+function persist() {
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify({ charts, opts: getOpts(), code: $('#code').value, dirty }));
+  } catch (e) { /* storage unavailable */ }
+}
+function restore() {
+  try {
+    const d = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
+    if (!d) return null;
+    const o = d.opts || {};
+    if (o.mode) $('#optMode').value = o.mode;
+    ['labels', 'dedupe', 'guides'].forEach(k => { if (k in o) $('#opt' + k[0].toUpperCase() + k.slice(1)).checked = o[k]; });
+    $('#optComment').value = o.comment || '';
+    return d;
+  } catch (e) { return null; }
+}
+
+/* ------------------------------ wiring ---------------------------- */
+async function boot() {
+  const saved = restore();
+  charts = saved && Array.isArray(saved.charts) && saved.charts.length ? saved.charts : [{ label: '', src: '' }, { label: '', src: '' }];
+  renderCharts();
+  await initFrame();
+  if (saved && saved.code) { dirty = !!saved.dirty; updateDirty(); $('#code').value = saved.code; renderPreview(saved.code); }
+  else renderPreview('');
+  updateToolbar();
+
+  $('#addChart').onclick = () => { charts.push({ label: '', src: '' }); renderCharts(); };
+  $('#loadExample').onclick = () => {
+    if (charts.some(c => c.src.trim()) && !confirm('Replace the current charts with the example?')) return;
+    charts = EXAMPLE.map(c => ({ ...c })); dirty = false; renderCharts(); generate();
+  };
+  $('#clearAll').onclick = () => {
+    if (!confirm('Clear all pasted charts and the output?')) return;
+    charts = [{ label: '', src: '' }, { label: '', src: '' }]; dirty = false; updateDirty();
+    renderCharts(); setOutput(''); setStatus('');
+  };
+  $('#generate').onclick = () => {
+    if (dirty && !confirm('Regenerate the chart? Your manual edits will be replaced.')) return;
+    generate();
+  };
+  ['#optMode', '#optLabels', '#optDedupe', '#optGuides'].forEach(s => $(s).addEventListener('change', inputsChanged));
+  $('#optComment').addEventListener('input', inputsChanged);
+
+  document.querySelectorAll('#toolbar [data-op]').forEach(b => {
+    b.addEventListener('mousedown', e => e.preventDefault());
+    b.addEventListener('click', () => op(b.dataset.op));
+  });
+  $('#rowStyle').addEventListener('change', e => {
+    const v = e.target.value; e.target.value = '';
+    if (!selCell || !v) return;
+    const tr = selCell.parentElement;
+    if (v === 'normal') tr.removeAttribute('class'); else tr.className = v;
+    syncFromPreview();
+  });
+  document.querySelectorAll('#device button').forEach(b => b.addEventListener('click', () => {
+    device = b.dataset.dev;
+    document.querySelectorAll('#device button').forEach(x => x.classList.toggle('on', x === b));
+    frame.style.width = device === 'mobile' ? '370px' : '600px';
+    fdoc.body.className = device;
+    resize();
+  }));
+
+  $('#code').addEventListener('input', debounce(() => { renderPreview($('#code').value); markEdited(); }, 400));
+  $('#format').onclick = () => { if (!root) return; renderPreview($('#code').value); $('#code').value = serRoot(); persist(); };
+  $('#copy').onclick = async () => {
+    const v = $('#code').value;
+    try { await navigator.clipboard.writeText(v); }
+    catch (e) { const ta = $('#code'); ta.select(); document.execCommand('copy'); }
+    const b = $('#copy'), t = b.textContent; b.textContent = 'Copied ✓'; setTimeout(() => b.textContent = t, 1400);
+  };
+  $('#download').onclick = () => {
+    const name = (getOpts().comment || charts.map(c => c.label).filter(Boolean).join('-') || 'bundle-size-chart')
+      .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '.html';
+    const a = el('a', { href: URL.createObjectURL(new Blob([$('#code').value], { type: 'text/html' })), download: name });
+    document.body.appendChild(a); a.click(); a.remove();
+  };
+  window.addEventListener('resize', resize);
+}
+boot();
+})();
+</script>
+</body>
+</html>
