@@ -56,6 +56,11 @@
   .code-head{display:flex;justify-content:space-between;align-items:center;margin:16px 0 6px;gap:8px;flex-wrap:wrap}
   .code-head b{font-size:13px}
   #code{min-height:320px;white-space:pre;overflow:auto}
+  .problems{display:none;margin-top:16px;border:1px solid #e3b4b4;background:#fdecec;color:#7a1f1f;border-radius:6px;padding:10px 12px}
+  .problems.show{display:block}
+  .problems ul{margin:6px 0 10px;padding-left:20px}
+  .problems code{background:#fff;padding:0 3px;border-radius:3px}
+  .parse.warn{color:var(--warn)}
   .dirty{font-size:12px;color:var(--warn);display:none}
   .dirty.show{display:inline}
   .empty{color:var(--muted);text-align:center;padding:40px 10px}
@@ -137,10 +142,16 @@
       <iframe id="preview" title="Size chart preview"></iframe>
     </div>
 
+    <div class="problems" id="problems">
+      <b>This HTML would break the product page template — copying is blocked until it’s fixed.</b>
+      <ul id="problemList"></ul>
+      <div class="btns"><button class="primary" id="autoFix">Fix automatically</button><span style="font-size:12px">Or edit the HTML below by hand. (The preview can look fine even when the HTML is broken — browsers quietly repair it here, but not inside the theme.)</span></div>
+    </div>
+
     <div class="code-head">
       <b>HTML for Shopify</b>
       <div class="btns">
-        <button id="format">Tidy HTML</button>
+        <button id="format" title="Re-format and repair the HTML">Tidy / repair HTML</button>
         <button id="download">Download .html</button>
         <button class="primary" id="copy">Copy HTML</button>
       </div>
@@ -422,19 +433,115 @@ function generate() {
   const comment = (opts.comment || `bundle – ${pieces.map(p => p.label).join(' + ')}`).replace(/--+/g, '–');
   let html = `<!-- ${comment} -->\n` + tables.map(serTable).join('\n<br>\n');
   if (opts.guides && extras.length) {
-    const seen = new Set(); let dropped = 0;
-    extras.forEach(x => {
-      const k = x.replace(/<!--[\s\S]*?-->/g, '').replace(/\s+/g, '');
-      if (!k) return;
-      if (seen.has(k)) { dropped++; return; }
-      seen.add(k); html += '\n\n' + x;
-    });
-    if (dropped) msg.push(`Removed ${dropped} duplicate sizing guide${dropped > 1 ? 's' : ''}.`);
+    const g = mergeGuides(extras);
+    if (g.html) html += '\n\n' + g.html;
+    if (g.repaired) { msg.push(`Repaired broken HTML (unbalanced tags) in ${g.repaired} pasted sizing guide${g.repaired > 1 ? 's' : ''}.`); level = 'warn'; }
+    if (g.dropped) msg.push(`Removed ${g.dropped} duplicate sizing guide element${g.dropped > 1 ? 's' : ''}.`);
   }
   html += '\n';
   dirty = false; updateDirty();
   setOutput(html);
   setStatus(msg.join(' '), level);
+}
+
+/**
+ * Combine the HTML that follows each pasted table (sizing guides).
+ * - Every paste is run through the browser's HTML parser, which drops stray
+ *   closing tags and closes unclosed ones, so nothing can leak out of the
+ *   theme's size-chart modal.
+ * - Duplicate top-level blocks (same markup) are dropped.
+ * - Any element whose id was already used (e.g. a second #mens_guide) is dropped.
+ */
+function mergeGuides(extras) {
+  const seenKeys = new Set(), seenIds = new Set(), seenComments = new Set();
+  let out = '', dropped = 0, repaired = 0;
+  extras.forEach(x => {
+    if (checkBalance(x).length) repaired++;
+    const tpl = document.createElement('template');
+    tpl.innerHTML = x;
+    tpl.content.childNodes.forEach(n => {
+      if (n.nodeType === 8) {
+        const k = n.data.trim();
+        if (!k || seenComments.has(k)) return;
+        seenComments.add(k); out += `<!--${n.data}-->`;
+      } else if (n.nodeType === 3) {
+        if (/\S/.test(n.data)) out += n.data;
+        else out += n.data.includes('\n') ? '\n' : n.data;
+      } else if (n.nodeType === 1) {
+        const key = n.outerHTML.replace(/\s+/g, '');
+        if (seenKeys.has(key)) { dropped++; return; }
+        seenKeys.add(key);
+        const withId = [n, ...n.querySelectorAll('[id]')].filter(e => e.id);
+        for (const e of withId) {
+          if (e !== n && !n.contains(e)) continue; // already removed with an ancestor
+          if (seenIds.has(e.id)) {
+            if (e === n) { dropped++; return; }
+            e.remove(); dropped++;
+          } else seenIds.add(e.id);
+        }
+        if (!n.textContent.trim() && !n.querySelector('img,iframe,video')) return;
+        out += n.outerHTML;
+      }
+    });
+    out += '\n\n';
+  });
+  return { html: out.replace(/\n{3,}/g, '\n\n').trim(), dropped, repaired };
+}
+
+/* --------------------------- validation --------------------------- */
+const VOID_TAGS = new Set(['area','base','br','col','embed','hr','img','input','link','meta','source','track','wbr']);
+const OPTIONAL_END = new Set(['p','li','td','th','tr','tbody','thead','tfoot','option','dt','dd']);
+/** Report stray closing tags and unclosed tags in raw HTML (with line numbers). */
+function checkBalance(html) {
+  const s = String(html).replace(/<!--[\s\S]*?-->/g, m => m.replace(/[^\n]/g, ' '));
+  const line = i => s.slice(0, i).split('\n').length;
+  const re = /<(\/?)([a-zA-Z][\w-]*)\b[^>]*>/g;
+  const stack = [], issues = [];
+  let m;
+  while ((m = re.exec(s))) {
+    const tag = m[2].toLowerCase();
+    if (VOID_TAGS.has(tag)) continue;
+    if (!m[1]) { if (!m[0].endsWith('/>')) stack.push({ tag, i: m.index }); continue; }
+    let k = stack.length - 1;
+    while (k >= 0 && stack[k].tag !== tag) k--;
+    if (k < 0) { issues.push(`Stray <code>&lt;/${tag}&gt;</code> on line ${line(m.index)} has no matching opening tag — this closes part of the website’s page layout.`); continue; }
+    for (let j = stack.length - 1; j > k; j--)
+      if (!OPTIONAL_END.has(stack[j].tag)) issues.push(`<code>&lt;${stack[j].tag}&gt;</code> on line ${line(stack[j].i)} is never closed.`);
+    stack.length = k;
+  }
+  stack.forEach(o => { if (!OPTIONAL_END.has(o.tag)) issues.push(`<code>&lt;${o.tag}&gt;</code> on line ${line(o.i)} is never closed.`); });
+  return issues;
+}
+function checkIds(html) {
+  const tpl = document.createElement('template');
+  tpl.innerHTML = html;
+  const counts = {};
+  tpl.content.querySelectorAll('[id]').forEach(e => counts[e.id] = (counts[e.id] || 0) + 1);
+  return Object.entries(counts).filter(([, c]) => c > 1)
+    .map(([id, c]) => `The id <code>${esc(id)}</code> is used ${c} times — “show guide” links will only open the first one.`);
+}
+function validate() {
+  const html = $('#code').value;
+  const issues = html.trim() ? [...checkBalance(html), ...checkIds(html)] : [];
+  const box = $('#problems');
+  box.classList.toggle('show', issues.length > 0);
+  $('#problemList').innerHTML = issues.map(i => `<li>${i}</li>`).join('');
+  $('#copy').disabled = $('#download').disabled = issues.length > 0;
+  return issues;
+}
+/** Re-parse the HTML (balances tags), drop later duplicate ids, re-serialize. */
+function fixHtml() {
+  if (!root) return;
+  renderPreview($('#code').value);
+  const seen = new Set();
+  [...root.querySelectorAll('[id]')].forEach(e => {
+    if (!root.contains(e)) return;
+    if (seen.has(e.id)) e.remove(); else seen.add(e.id);
+  });
+  $('#code').value = serRoot();
+  resize();
+  validate();
+  persist();
 }
 
 function fullRow(cls, html, W) {
@@ -567,7 +674,7 @@ function serRoot() {
     } else if (n.tagName === 'TABLE') s += serTable(n);
     else s += clean(n.cloneNode(true)).outerHTML;
   });
-  return s.trim() + '\n';
+  return s.replace(/\n{3,}/g, '\n\n').trim() + '\n';
 }
 
 /* ----------------------------- preview ---------------------------- */
@@ -650,10 +757,12 @@ const syncFromPreview = debounce(() => {
 function setOutput(html) {
   $('#code').value = html;
   renderPreview(html);
+  validate();
   persist();
 }
 function markEdited() {
   if ($('#code').value.trim()) { dirty = true; updateDirty(); }
+  validate();
   persist();
 }
 function updateDirty() { $('#dirtyNote').classList.toggle('show', dirty); }
@@ -743,8 +852,9 @@ function renderCharts() {
       const bits = [`${p.tables.length} table${p.tables.length > 1 ? 's' : ''}`, `${width(p.tables[0])} columns`];
       if (s.ok) bits.push(`sizes ${s.data.map(d => txt(d.tr.cells[0])).join(', ')}`);
       if (p.extras) bits.push('+ guide/extra HTML');
-      info.className = 'parse ok';
-      info.textContent = '✓ ' + bits.join(' · ');
+      const probs = checkBalance(c.src).length + checkIds(c.src).length;
+      info.className = probs ? 'parse warn' : 'parse ok';
+      info.textContent = (probs ? `⚠ This paste has ${probs} HTML problem${probs > 1 ? 's' : ''} (e.g. a stray </div>) — it will be repaired when combined · ` : '✓ ') + bits.join(' · ');
       label.placeholder = p.suggested ? `Piece name (detected: ${p.suggested})` : 'Piece name (e.g. Jacket)';
     };
     describe();
@@ -792,6 +902,7 @@ async function boot() {
   await initFrame();
   if (saved && saved.code) { dirty = !!saved.dirty; updateDirty(); $('#code').value = saved.code; renderPreview(saved.code); }
   else renderPreview('');
+  validate();
   updateToolbar();
 
   $('#addChart').onclick = () => { charts.push({ label: '', src: '' }); renderCharts(); };
@@ -831,7 +942,8 @@ async function boot() {
   }));
 
   $('#code').addEventListener('input', debounce(() => { renderPreview($('#code').value); markEdited(); }, 400));
-  $('#format').onclick = () => { if (!root) return; renderPreview($('#code').value); $('#code').value = serRoot(); persist(); };
+  $('#format').onclick = fixHtml;
+  $('#autoFix').onclick = fixHtml;
   $('#copy').onclick = async () => {
     const v = $('#code').value;
     try { await navigator.clipboard.writeText(v); }

@@ -24,5 +24,6 @@ No build step, no dependencies. You can also just open `index.html` locally in a
 ## Notes
 
 - Preview styling is copied from the live theme’s `sizecharts.css`, the Bootstrap `visible-xs` / `hidden-xs` rules, and the product-page Size Guide modal. Toggle **Desktop / Mobile** to check both guide variants. If the theme’s size chart CSS changes, update the `SITE_CSS` block near the top of the script.
+- **Broken HTML protection.** Pasted sizing guides are run through the browser’s HTML parser before combining, so stray closing tags (e.g. an extra `</div>`, which closes the theme’s size-chart modal and breaks the product page) are removed and unclosed tags are closed. Guide elements that reuse an id (like a second `#mens_guide`) are dropped. The final HTML is checked on every change. If it has unbalanced tags or duplicate ids, a red panel lists them with line numbers, **Copy** and **Download** are disabled, and **Fix automatically** repairs it. The preview can look fine even when the HTML is broken, so trust the panel over the preview.
 - Charts with a side image column (`rowspan`, e.g. hats) can’t be merged by size; they fall back to stacking automatically.
 - Drafts are saved in your browser’s local storage. Nothing is sent anywhere.
